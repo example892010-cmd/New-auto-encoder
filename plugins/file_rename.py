@@ -141,15 +141,21 @@ async def auto_rename_files(client, message):
         status = await message.reply_text("Download Started...")
         download_progress = ProgressReporter(status, "Download Started...")
         await download_progress.begin_transfer(file_size)
+
+        async def report_download_progress(current, total):
+            if cancel_event.is_set():
+                client.stop_transmission()
+            await download_progress.transfer(current, total)
+
         source_path = await client.download_media(
             message,
             file_name=os.path.join(work_dir, "source" + extension),
-            progress=download_progress.transfer,
+            progress=report_download_progress,
         )
+        if cancel_event.is_set():
+            raise MediaProcessingCancelled("Cancelled during download")
         if not source_path or not os.path.isfile(source_path):
             raise RuntimeError("Telegram download returned no local file")
-        if cancel_event.is_set():
-            raise MediaProcessingCancelled("Cancelled after download")
 
         await status.edit("Preparing renamed file and metadata…")
         renamed_path = os.path.join(work_dir, output_name)
@@ -253,23 +259,30 @@ async def auto_rename_files(client, message):
                 upload_heading += f" ({index}/{len(outputs)})"
             upload_progress = ProgressReporter(status, upload_heading)
             await upload_progress.begin_transfer(os.path.getsize(path))
+            async def report_upload_progress(current, total):
+                if cancel_event.is_set():
+                    client.stop_transmission()
+                await upload_progress.transfer(current, total)
+
             if preferred_kind == "video":
-                await _send_with_floodwait(
+                send_result = await _send_with_floodwait(
                     client.send_video, message.chat.id, video=path, caption=caption,
                     thumb=thumb_path, duration=duration, file_name=filename,
-                    progress=upload_progress.transfer,
+                    progress=report_upload_progress,
                 )
             elif preferred_kind == "audio":
-                await _send_with_floodwait(
+                send_result = await _send_with_floodwait(
                     client.send_audio, message.chat.id, audio=path, caption=caption,
                     thumb=thumb_path, duration=duration, file_name=filename,
-                    progress=upload_progress.transfer,
+                    progress=report_upload_progress,
                 )
             else:
-                await _send_with_floodwait(
+                send_result = await _send_with_floodwait(
                     client.send_document, message.chat.id, document=path, caption=caption,
-                    thumb=thumb_path, file_name=filename, progress=upload_progress.transfer,
+                    thumb=thumb_path, file_name=filename, progress=report_upload_progress,
                 )
+            if cancel_event.is_set() and send_result is None:
+                raise MediaProcessingCancelled("Cancelled during upload")
         await status.edit("Upload complete ✅")
     except MediaProcessingCancelled:
         logger.info("Media job cancelled for user %s", user_id)

@@ -10,4 +10,4 @@ async def cancel_media_job(_, message):
     if not event:
         return await message.reply_text("There is no active media job to cancel.")
     event.set()
-    await message.reply_text("Cancellation requested. The current download/FFmpeg step will stop safely.")
+    await message.reply_text("Cancellation requested. The active transfer or FFmpeg step will stop safely.")
