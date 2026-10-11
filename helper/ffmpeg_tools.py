@@ -46,7 +46,9 @@ def build_encode_command(
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", input_path,
         "-map", "0", "-map_metadata", "0", "-vf", scale,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+        # Favor encoding speed; keep CRF unchanged so this does not deliberately
+        # trade away the configured visual-quality target. Expect larger files.
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
         "-c:a", "copy", "-c:s", "copy",
         *(metadata_arguments(fields or {})), "-progress", "pipe:1", "-stats_period", "1", "-nostats", output_path,
     ]
