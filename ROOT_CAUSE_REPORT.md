@@ -1,41 +1,35 @@
 # Root-Cause Report — Auto-Rename Bot
 
-## Executive finding
+## Finding
 
-The reported `Registered Pyrogram handler counts by group: {}` is **not reproducible as a steady-state result from the inspected repository**. Under Pyrogram **2.0.80**, a clean dependency installation, placeholder configuration, and no Telegram/MongoDB connection, the original repository's plugins could be imported and its handlers loaded. The repaired tree loads **29 handlers**: **2 in group `-1`** and **27 in group `0`**.
+The supplied repository snapshot does **not** establish the exact production reason that the bot stopped responding. The live Render process logs, deployed commit, and environment-variable presence are not part of the ZIP, and no live service was accessed. It would be misleading to call the empty handler-count snapshot the proven root cause.
 
-The exact production cause cannot be proven from the repository snapshot alone: the inspected `bot.py` did not contain the reported custom log line, and I did not access or modify the live Render service. The strongest verified explanation for an empty `{}` snapshot is **reading `dispatcher.groups` immediately after Pyrogram's synchronous plugin-discovery call but before its scheduled handler-addition tasks have run**. The Pyrogram 2.0.80 loader creates asynchronous dispatcher tasks; without yielding to the event loop, the groups dictionary is empty. The regression test demonstrates both states: an immediate snapshot is `{}`, then after the loop processes the queued additions the actual count is `{-1: 2, 0: 27}`.
+One concrete deployment mismatch **is** established from the repository: the original `render.yaml` selected Render's native Python runtime (`env: python`) and a pip build command, while FFmpeg was installed only by the project's Dockerfile. A Render deployment following that Blueprint would not reliably have the FFmpeg executable required for metadata remuxing and optional video encoding. This explains FFmpeg/media-processing failures, but it does **not by itself explain why `/start` or other commands receive no reply**. The Blueprint has been corrected to select the Docker runtime.
 
-If Render logged the count only after `Client.start()` had fully completed, the more likely explanation is instead a **deployment/runtime mismatch** (for example, a different commit or plugin root/working directory). The available evidence does not distinguish those production possibilities conclusively.
+## What was verified from the source and tests
 
-## Evidence collected
+- With the declared Pyrogram 2.0.80 dependency and placeholder-only configuration, all plugins import and the loader registers **29 handlers**: 2 in group `-1` and 27 in group `0`. The local test exercises plugin preflight, the Pyrogram loader, required command decorators, command parsing, and callback scoping without connecting to Telegram.
+- Pyrogram's plugin loader schedules handler additions on the event loop. A dispatcher count read immediately after plugin discovery can be `{}` before those scheduled additions run. The test reproduces the empty early snapshot and then observes the nonzero handler groups after yielding to the loop. Therefore, an empty count is evidence only if its timing relative to startup is known.
+- The repository had a relative plugin root, which could point to the wrong directory if Render starts the process elsewhere. Startup now resolves the root from `bot.py`, changes to that directory, imports each plugin with a full traceback on error, and checks registered counts after client startup.
+- Root-level legacy modules coexist with `plugins/`, but the active client explicitly loads `plugins` as its Smart Plugins root. The duplicate root modules are not loaded by that configured discovery path, so they are not demonstrated to cause duplicate handler registration.
+- Mongo calls are generally caught and logged in the helper layer; a failed preference read falls back to a default rather than blocking every handler. Startup still requires `DB_URL`, and the database client is initialized at import. A missing/invalid value or a live connection failure can be diagnosed only from the deployment's actual startup/database logs.
 
-1. **The old plugin tree was not missing handlers.** A local Pyrogram 2.0.80 import/load test found 26 decorated handlers in the checked-out version before the repair. The reference repository was inspected for comparison, but it is a separate video-encoding bot and does not explain this Render count.
-2. **The displayed empty count can be a timing artifact.** In Pyrogram 2.0.80, `Dispatcher.add_handler()` schedules an async task on the loop. A count read before the loop yields can therefore be `{}` even though the loader has discovered the plugins.
-3. **The supplied log text was not present in the checked-out source.** That means the log line came from another revision, a local/deployment-only diagnostic, or an external wrapper; its exact execution point is not available here.
-4. **The original plugin names containing `&` are undesirable but not proven to be the root cause.** They were renamed to conventional importable names, but the old names did not, by themselves, reproduce a zero-handler result in the inspected loader test.
-5. **A relative plugin root was a genuine deployment fragility.** Pyrogram was configured with `plugins={"root": "plugins"}`. If the process working directory differed from the repository root, plugin discovery could inspect the wrong directory. Startup now anchors the process to the absolute repository path and preflights every module before connecting.
+## Changes made in the repair
 
-## Other verified behavior defects repaired
+The Render Blueprint now uses the Dockerfile that installs FFmpeg; plugin discovery is pinned to the project root and reports both preflight and post-start handler counts; the health endpoint now follows `WEBHOOK`; callbacks are scoped; missing help/about routes were added; database preference updates use safe non-destructive upserts; `/cancel` stops active Telegram transfers and FFmpeg work; and media workflows include tested temporary-file cleanup and user-visible failure reporting. See `CHANGELOG_REPAIR.md` for the file-by-file list and `TEST_REPORT.md` for exact checks.
 
-These do not, by themselves, prove why the handler count was empty, but they could make a running bot look non-responsive or produce failed media jobs:
+## Render evidence needed to identify the production-only cause
 
-- `/help` and `/about` were displayed in the help text without actual message handlers.
-- A callback handler matched **every** callback query and could answer/consume metadata and force-subscription button actions.
-- FFmpeg metadata arguments were assembled with a nested-loop/list mutation pattern rather than flat option/value argument pairs.
-- Media processing lacked isolated per-job temporary directories, safe filename sanitization, clear FFmpeg failure reporting, and a user cancellation path.
-- Preference updates did not use a safe upsert pattern for users who had not previously run `/start`; the replacement preserves defaults and does not reset existing records.
-- Tutorial errors were printed rather than logged with a traceback or reported to the user.
+From Render, provide the following **redacted** information; do not share tokens, API hashes, Mongo URIs, or other secret values:
 
-## Remediation in this delivery
+1. The deployment Events entry showing the deployed commit and whether the service was built as Docker or native Python.
+2. The startup Logs from process launch through either the first successful startup or process exit. Relevant lines include `Set API_ID, API_HASH, BOT_TOKEN, and DB_URL...`, any traceback, `Plugin import failed`, each `Plugin preflight OK`, `Plugin preflight handler counts by group`, `Pyrogram registered handler counts by group`, and `started successfully`.
+3. Any MongoDB errors, especially `Could not read...`, `ServerSelectionTimeoutError`, or authentication/network failures, with secret values removed.
+4. If startup succeeds but users still get no response, a short log window around a test `/start`, plus confirmation that the test targeted the deployed bot username and that Render shows the service as Live. Pyrogram's normal log level may not print every inbound message, so absence of an update line alone is not proof that Telegram sent none.
+5. Confirm whether `BOT_TOKEN`, `API_ID`, `API_HASH`, and `DB_URL` are configured (yes/no only), and whether BotFather privacy/group settings are relevant to where the command was sent.
 
-- Resolve the project and plugin directories from `bot.py`'s absolute path; pin the process working directory before plugin discovery.
-- Import every plugin before connecting. On failure, log the full traceback and abort instead of appearing healthy with missing handlers.
-- Record preflight counts and **post-start dispatcher counts** only after startup has completed; abort on zero registered handlers.
-- Use explicit Python package markers and conventional plugin filenames.
-- Scope callback filters and add the missing commands.
-- Add tested filename parsing, media metadata/encoding command builders, safe temp-file handling, timeout/cancel support, and optional 480p/720p/1080p encodes.
+These observations distinguish a startup/configuration failure, a plugin/import/runtime mismatch, database trouble, and an update-delivery/targeting issue. Until they are available, the exact cause of the live no-response symptom remains unverified.
 
-## What remains unverified
+## Limits
 
-No live Render logs, active Render settings, production Telegram bot token, or production MongoDB credentials were accessed. I therefore did not claim a live deploy passed, and I did not change GitHub, Render, bot credentials, or production data. To discriminate timing from a deployed-code/path mismatch, compare the Render deployment commit with this source and inspect whether the empty-count diagnostic runs before or after `await super().start()` completes.
+No live Render service, GitHub repository, Telegram session, or production MongoDB was contacted or changed. The passing local tests establish offline behavior only; they do not prove production is working. Docker was unavailable, so the image itself was not built. The exact deployed state must still be checked against the repaired source and verified using the redacted Render log lines above.

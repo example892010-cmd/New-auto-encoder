@@ -6,6 +6,7 @@
 - **`config.py`** — Preserves the existing environment-variable names, adds optional `ENCODE_RESOLUTIONS` and `FFMPEG_TIMEOUT` controls, rejects unsupported resolutions and non-positive FFmpeg timeouts, and includes `/about` copy.
 - **`Dockerfile` and `render.yaml`** — The Render Blueprint now selects the existing Dockerfile, which installs FFmpeg and launches `python3 bot.py`; it also exposes the optional encoding and timeout variables. No live Render settings were changed.
 - **`RENDER_DEPLOYMENT.md`** — Documents the verified deployment configuration, required environment, opt-in encoding, and production verification boundaries.
+- **`ROOT_CAUSE_REPORT.md`** — Separates the confirmed Render Python-versus-Docker/FFmpeg mismatch from the still-unproven production command-silence cause, and lists the exact redacted Render evidence needed to distinguish startup, database, and update-delivery failures.
 - **`README.md`** — Corrects the concurrency claim and documents the health toggle, optional encoding, FFmpeg runtime requirement, and `/cancel`.
 
 ## Plugin behavior

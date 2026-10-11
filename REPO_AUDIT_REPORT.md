@@ -16,7 +16,7 @@ The uploaded project test suite passed **31/31 tests** under Python 3.10.21 and 
 
 Docker was unavailable, so the Docker image was not built. No Telegram API session, production MongoDB, GitHub repository, or Render service was accessed. Accordingly, this audit does **not** prove the bot is fully working in production. Live delivery, credentials, database networking, Render build/start, and the exact user video remain unverified. The user must set `ENCODE_RESOLUTIONS` in Render to enable transcoding; the repository intentionally does not enable costly encoding by default.
 
-The archive prepared for delivery contains only files modified or added in this audit, with repository-relative paths. It does not contain a second copy of the complete repository.
+Delivery includes both a complete repaired project ZIP with `bot.py`, `config.py`, `requirements.txt`, `Dockerfile`, `plugins/`, and `helper/` directly at the archive root, and a separate ZIP containing only modified/new files with repository-relative paths.
 
 ## Deployment references
 
