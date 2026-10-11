@@ -10,6 +10,7 @@ from helper.ffmpeg_tools import (
     run_process,
 )
 from helper.filename import parse_filename, render_template, sanitize_filename
+from helper.progress import ProgressReporter, format_bytes, format_eta
 
 
 class FilenameTests(unittest.TestCase):
@@ -89,6 +90,48 @@ class ProcessCancellationTests(unittest.IsolatedAsyncioTestCase):
                 cancel_event=event,
             )
         await task
+
+    async def test_ffmpeg_progress_pipe_is_parsed_as_seconds(self):
+        seen = []
+
+        async def collect(seconds):
+            seen.append(seconds)
+
+        code, stdout, _ = await run_process(
+            [
+                os.sys.executable,
+                "-c",
+                "print('frame=1'); print('out_time=00:00:02.500000'); print('progress=continue')",
+            ],
+            timeout=5,
+            progress_callback=collect,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("progress=continue", stdout)
+        self.assertEqual(seen, [2.5])
+
+
+class ProgressReporterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_transfer_progress_matches_requested_bar_style(self):
+        class FakeStatus:
+            def __init__(self):
+                self.texts = []
+
+            async def edit_text(self, text):
+                self.texts.append(text)
+
+        status = FakeStatus()
+        reporter = ProgressReporter(status, "Upload Started...", min_interval=0)
+        await reporter.begin_transfer(1024)
+        await reporter.transfer(512, 1024, force=True)
+        text = status.texts[-1]
+        self.assertIn("Upload Started...", text)
+        self.assertIn("⬢" * 10 + "⬡" * 10, text)
+        self.assertIn("Sɪᴢᴇ: 512.00 B | 1.00 KB", text)
+        self.assertIn("Dᴏɴᴇ : 50.0%", text)
+        self.assertIn("⏰️ ETA:", text)
+        self.assertEqual(format_bytes(1024), "1.00 KB")
+        self.assertEqual(format_eta(198), "3m, 18s")
 
 
 if __name__ == "__main__":

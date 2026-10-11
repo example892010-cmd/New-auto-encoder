@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 import unittest
@@ -45,15 +46,20 @@ class FakeClient:
         self.sent = []
         self.temporary_dirs = []
 
-    async def download_media(self, message_or_id, file_name=None):
+    async def download_media(self, message_or_id, file_name=None, progress=None, progress_args=()):
         if not file_name:
             return None
         self.temporary_dirs.append(os.path.dirname(file_name))
         with open(file_name, "wb") as out:
             out.write(self.source)
+        if progress:
+            await progress(len(self.source), len(self.source), *progress_args)
         return file_name
 
-    async def send_document(self, chat_id, document, caption, thumb=None, file_name=None):
+    async def send_document(self, chat_id, document, caption, thumb=None, file_name=None, progress=None, progress_args=()):
+        if progress:
+            size = os.path.getsize(document)
+            await progress(size, size, *progress_args)
         self.sent.append({
             "chat_id": chat_id,
             "path": document,
@@ -88,16 +94,21 @@ class MediaHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ACTIVE_JOBS, {})
         self.assertTrue(all(not os.path.exists(path) for path in client.temporary_dirs))
         self.assertEqual(message.status.texts[-1], "Upload complete ✅")
+        self.assertTrue(any("Download Started..." in text and "ᴘʀᴏɢʀᴇss ʙᴀʀ" in text for text in message.status.texts))
+        self.assertTrue(any("Upload Started..." in text and "100.0%" in text for text in message.status.texts))
 
     async def test_metadata_remux_keeps_final_upload_filename(self):
         message = FakeMessage()
         client = FakeClient(b"sample-media-data")
 
-        async def fake_run_process(argv, *, timeout, cancel_event=None):
+        async def fake_run_process_with_progress(argv, *, timeout, cancel_event=None, progress_callback=None):
             output_path = argv[-1]
+            if progress_callback:
+                await asyncio.sleep(1.25)
+                await progress_callback(5.0)
             with open(output_path, "wb") as out:
                 out.write(b"remuxed-media-data")
-            return 0, "", ""
+            return 0, "progress=end\n", ""
 
         with (
             patch.object(AshutoshGoswami24, "get_format_template", new=AsyncMock(return_value="{title} S{season} EP{episode} [{quality}]")),
@@ -111,7 +122,8 @@ class MediaHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch.object(AshutoshGoswami24, "get_video", new=AsyncMock(return_value=None)),
             patch.object(AshutoshGoswami24, "get_thumbnail", new=AsyncMock(return_value=None)),
             patch.object(AshutoshGoswami24, "get_caption", new=AsyncMock(return_value=None)),
-            patch("plugins.file_rename.run_process", new=fake_run_process),
+            patch("plugins.file_rename.probe_duration", new=AsyncMock(return_value=10.0)),
+            patch("plugins.file_rename.run_process", new=fake_run_process_with_progress),
         ):
             await auto_rename_files(client, message)
 
@@ -121,6 +133,7 @@ class MediaHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("metadata_", client.sent[0]["filename"])
         self.assertTrue(client.sent[0]["exists_during_upload"])
         self.assertTrue(all(not os.path.exists(path) for path in client.temporary_dirs))
+        self.assertTrue(any("Preparing metadata..." in text and "50.0%" in text for text in message.status.texts))
 
     async def test_initial_status_error_does_not_leave_user_busy_or_temp_files(self):
         message = FakeMessage()

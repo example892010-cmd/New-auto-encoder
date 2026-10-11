@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shutil
 import subprocess
@@ -5,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helper.ffmpeg_tools import build_encode_command, build_metadata_command
+from helper.ffmpeg_tools import build_encode_command, build_metadata_command, probe_duration, run_process
 
 FFMPEG = shutil.which("ffmpeg")
 FFPROBE = shutil.which("ffprobe")
@@ -28,13 +29,27 @@ class FFmpegIntegrationTests(unittest.TestCase):
                 self.skipTest("Installed FFmpeg lacks the libx264 encoder")
             self.assertEqual(generated.returncode, 0, generated.stderr)
 
+            duration = asyncio.run(probe_duration(source))
+            self.assertIsNotNone(duration)
+            self.assertAlmostEqual(duration, 1.0, delta=0.15)
+
             for resolution in (480, 720, 1080):
                 output = str(Path(tmp) / f"encoded-{resolution}.mkv")
-                result = subprocess.run(
-                    build_encode_command(source, output, resolution, {"title": "ANIFLIX test"}),
-                    capture_output=True, text=True, timeout=90,
+                progress_values = []
+
+                async def record_progress(seconds):
+                    progress_values.append(seconds)
+
+                code, stdout, stderr = asyncio.run(
+                    run_process(
+                        build_encode_command(source, output, resolution, {"title": "ANIFLIX test"}),
+                        timeout=90,
+                        progress_callback=record_progress,
+                    )
                 )
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("progress=end", stdout)
+                self.assertTrue(progress_values, f"No progress callback for {resolution}p")
                 probe = subprocess.run(
                     [FFPROBE, "-v", "error", "-show_entries", "stream=width,height", "-of", "json", output],
                     capture_output=True, text=True, timeout=20,
