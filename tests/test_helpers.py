@@ -58,6 +58,8 @@ class FFmpegArgumentTests(unittest.TestCase):
                                    {"title": "ANIFLIX encode"})
         self.assertIn("/tmp/input name.mkv", cmd)
         self.assertIn("libx264", cmd)
+        self.assertEqual(cmd[cmd.index("-preset") + 1], "ultrafast")
+        self.assertEqual(cmd[cmd.index("-crf") + 1], "26")
         self.assertIn("-vf", cmd)
         with self.assertRaises(ValueError):
             build_encode_command("in.mkv", "out.mkv", 360)
