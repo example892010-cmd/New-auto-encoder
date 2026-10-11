@@ -47,6 +47,7 @@ The values above were non-production placeholders. Test code mocks Telegram oper
 | Initial status-send failure | **PASS** — confirms the user's active-job lock is cleared |
 | FFmpeg argument safety | **PASS** — flat metadata option/value pairs; no shell interpolation |
 | Generated sample encoding | **PASS** — 480p, 720p, and 1080p encode commands executed; a 640×360 input remained 640×360 (no upscaling) |
+| Faster encoding preset | **PASS** — command now uses `ultrafast` with CRF still 26. On a 10-second synthetic 1280×720 clip, local encode time was 1.079s (`veryfast`) vs 0.569s (`ultrafast`); output was 2.04 MB vs 7.25 MB. |
 | Metadata remux | **PASS** — sample output retains the regression title |
 | Progress display | **PASS** — requested bar layout, upload/download byte callbacks, and real FFmpeg progress-pipe updates |
 | Duration probing | **PASS** — ffprobe duration read from the generated sample clip |
@@ -57,3 +58,4 @@ The values above were non-production placeholders. Test code mocks Telegram oper
 
 - Python 3.10.21 was explicitly provisioned, all declared dependencies were installed into an isolated environment, and all tests passed there. The Docker image itself was not built because Docker is not available in the sandbox.
 - No live Telegram API/bot token, production MongoDB, or Render deployment was used. This report therefore proves local loader/helper/media behavior, not live network behavior or a production rollout.
+- The preset timing/size comparison is a small synthetic local benchmark, not a Render or user-file benchmark. CRF stays at 26, but changing an encoder preset cannot guarantee pixel-identical output; faster encoding trades compression efficiency for speed and may increase upload/storage size.

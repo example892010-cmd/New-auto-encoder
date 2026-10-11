@@ -20,7 +20,7 @@
 
 - **`helper/__init__.py`, `plugins/__init__.py`** — Make the module roots explicit Python packages.
 - **`helper/filename.py`** — Parses common episode/quality filename conventions, substitutes legacy/current template markers, and sanitizes file basenames.
-- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout and cancellation.
+- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; the x264 preset is now `ultrafast` while CRF remains 26, prioritizing encode speed without intentionally lowering the configured quality target. Faster presets can produce larger files. It also parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout and cancellation.
 - **`helper/progress.py`** — Formats a throttled Telegram progress bar with byte/speed/ETA for transfers and percentage/output-size/realtime-speed/ETA for media processing.
 - **`helper/job_control.py`** — Tracks in-memory per-user cancellation events.
 - **`helper/database.py`** — Keeps existing fields/defaults and uses non-destructive upserts for preferences, avoiding first-use failures and Mongo update-path conflicts.
