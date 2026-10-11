@@ -20,7 +20,7 @@
 
 - **`helper/__init__.py`, `plugins/__init__.py`** — Make the module roots explicit Python packages.
 - **`helper/filename.py`** — Parses common episode/quality filename conventions, substitutes legacy/current template markers, and sanitizes file basenames.
-- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; the x264 preset is now `ultrafast` while CRF remains 26, prioritizing encode speed without intentionally lowering the configured quality target. Faster presets can produce larger files. It also parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout and cancellation.
+- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; H.264 encoding now selects the first normal video stream (excluding attached cover-art/thumbnail tracks) and preserves audio, subtitles, and attachments. The x264 preset is `ultrafast` while CRF remains 26, prioritizing speed without intentionally lowering the configured quality target; faster presets can produce larger files. It also parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout/cancellation.
 - **`helper/progress.py`** — Formats a throttled Telegram progress bar with byte/speed/ETA for transfers and percentage/output-size/realtime-speed/ETA for media processing.
 - **`helper/job_control.py`** — Tracks in-memory per-user cancellation events.
 - **`helper/database.py`** — Keeps existing fields/defaults and uses non-destructive upserts for preferences, avoiding first-use failures and Mongo update-path conflicts.
@@ -31,7 +31,7 @@
 - **`tests/test_database.py`** — Mocked Mongo upsert behavior and preservation of existing user data.
 - **`tests/test_media_handler.py`** — Mocked media download/rename/caption/upload and temp cleanup, with no Telegram or Mongo connection.
 - **`tests/test_plugin_registration.py`** — Pyrogram 2.0.80 plugin loading, group counts, command parsing (including bot mentions), callback isolation, non-repository startup directory, and early-snapshot timing.
-- **`tests/test_ffmpeg_integration.py`** — Generates a short test video and validates all supported profiles plus metadata remux using the installed FFmpeg/ffprobe.
+- **`tests/test_ffmpeg_integration.py`** — Generates test videos and validates all supported profiles, metadata remux, and a multistream file with attached cover art. It confirms the legacy `-map 0` behavior emitted an extra video stream, then verifies primary-frame similarity at a matching timestamp and audio preservation with the corrected mapping.
 - **Progress regression coverage** — Confirms the requested progress layout, Pyrogram transfer callback wiring, FFmpeg progress parsing, and live progress output from a real generated sample clip.
 
 ## Deliberately not changed

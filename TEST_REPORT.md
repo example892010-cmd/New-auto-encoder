@@ -2,7 +2,7 @@
 
 ## Result
 
-**25 tests passed; 0 failed; 0 skipped** under both Python **3.10.21** and **3.12.3**. The Python 3.10 run used the repository's complete `requirements.txt`, including `TgCrypto`. Ruff's undefined-name/unused-import checks and Python compilation both passed. FFmpeg and ffprobe were available in the sandbox.
+**26 tests passed; 0 failed; 0 skipped** under both Python **3.10.21** and **3.12.3**. The Python 3.10 run used the repository's complete `requirements.txt`, including `TgCrypto`. Ruff's undefined-name/unused-import checks and Python compilation both passed. FFmpeg and ffprobe were available in the sandbox.
 
 ## Executed checks
 
@@ -14,7 +14,7 @@ DB_NAME=autorename_test API_ID=12345 API_HASH=test-hash BOT_TOKEN='123456:TEST' 
 /tmp/autorename-venv/bin/python -m unittest discover -s tests -v
 ```
 
-For the Python 3.10.21 run, the same command used `/tmp/autorename310/bin/python` instead. Outcome: `Ran 25 tests ... OK` on both runtimes.
+For the Python 3.10.21 run, the same command used `/tmp/autorename310/bin/python` instead. Outcome: `Ran 26 tests ... OK` on both runtimes.
 
 ```bash
 /tmp/autorename-venv/bin/python -m compileall -q -f .
@@ -47,6 +47,7 @@ The values above were non-production placeholders. Test code mocks Telegram oper
 | Initial status-send failure | **PASS** — confirms the user's active-job lock is cleared |
 | FFmpeg argument safety | **PASS** — flat metadata option/value pairs; no shell interpolation |
 | Generated sample encoding | **PASS** — 480p, 720p, and 1080p encode commands executed; a 640×360 input remained 640×360 (no upscaling) |
+| Attached-cover multistream regression | **PASS** — synthetic source has a moving video, attached cover-art stream, and audio; legacy `-map 0` produces two video streams, while the new mapping emits only the real video, preserves the audio codec/start, and keeps a same-timestamp frame within the test's image-difference threshold |
 | Faster encoding preset | **PASS** — command now uses `ultrafast` with CRF still 26. On a 10-second synthetic 1280×720 clip, local encode time was 1.079s (`veryfast`) vs 0.569s (`ultrafast`); output was 2.04 MB vs 7.25 MB. |
 | Metadata remux | **PASS** — sample output retains the regression title |
 | Progress display | **PASS** — requested bar layout, upload/download byte callbacks, and real FFmpeg progress-pipe updates |
@@ -59,3 +60,4 @@ The values above were non-production placeholders. Test code mocks Telegram oper
 - Python 3.10.21 was explicitly provisioned, all declared dependencies were installed into an isolated environment, and all tests passed there. The Docker image itself was not built because Docker is not available in the sandbox.
 - No live Telegram API/bot token, production MongoDB, or Render deployment was used. This report therefore proves local loader/helper/media behavior, not live network behavior or a production rollout.
 - The preset timing/size comparison is a small synthetic local benchmark, not a Render or user-file benchmark. CRF stays at 26, but changing an encoder preset cannot guarantee pixel-identical output; faster encoding trades compression efficiency for speed and may increase upload/storage size.
+- The user-provided attachment described a visual mismatch but did not include the original or processed video (or the referenced screenshots). The new regression reproduces and fixes the confirmed extra-video-stream behavior on a synthetic attached-cover example, but the exact basket-to-court discrepancy in the user's media remains unverified pending those files.
