@@ -5,6 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from pyrogram import StopTransmission
+
 os.environ.setdefault("DB_URL", "mongodb://127.0.0.1:27017")
 
 from helper.database import AshutoshGoswami24
@@ -45,6 +47,11 @@ class FakeClient:
         self.source = source
         self.sent = []
         self.temporary_dirs = []
+        self.cancel_on_download = False
+        self.cancel_on_upload = False
+
+    def stop_transmission(self):
+        raise StopTransmission
 
     async def download_media(self, message_or_id, file_name=None, progress=None, progress_args=()):
         if not file_name:
@@ -53,13 +60,23 @@ class FakeClient:
         with open(file_name, "wb") as out:
             out.write(self.source)
         if progress:
-            await progress(len(self.source), len(self.source), *progress_args)
+            if self.cancel_on_download:
+                ACTIVE_JOBS[321].set()
+            try:
+                await progress(len(self.source), len(self.source), *progress_args)
+            except StopTransmission:
+                return None
         return file_name
 
     async def send_document(self, chat_id, document, caption, thumb=None, file_name=None, progress=None, progress_args=()):
         if progress:
             size = os.path.getsize(document)
-            await progress(size, size, *progress_args)
+            if self.cancel_on_upload:
+                ACTIVE_JOBS[321].set()
+            try:
+                await progress(size, size, *progress_args)
+            except StopTransmission:
+                return None
         self.sent.append({
             "chat_id": chat_id,
             "path": document,
@@ -69,6 +86,7 @@ class FakeClient:
             "exists_during_upload": os.path.isfile(document),
             "thumb": thumb,
         })
+        return SimpleNamespace(ok=True)
 
 
 class MediaHandlerTests(unittest.IsolatedAsyncioTestCase):
@@ -159,6 +177,44 @@ class MediaHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.temporary_dirs), 0)
         self.assertEqual(len(created_dirs), 1)
         self.assertFalse(os.path.exists(created_dirs[0]))
+
+    async def test_cancel_stops_active_download_and_cleans_partial_file(self):
+        message = FakeMessage()
+        client = FakeClient(b"partial-media-data")
+        client.cancel_on_download = True
+        ACTIVE_JOBS.clear()
+        with (
+            patch.object(AshutoshGoswami24, "get_format_template", new=AsyncMock(return_value="{title}")),
+            patch.object(AshutoshGoswami24, "get_media_preference", new=AsyncMock(return_value="document")),
+            patch.object(AshutoshGoswami24, "get_metadata", new=AsyncMock(return_value=False)),
+            patch.object(AshutoshGoswami24, "get_thumbnail", new=AsyncMock(return_value=None)),
+            patch.object(AshutoshGoswami24, "get_caption", new=AsyncMock(return_value=None)),
+        ):
+            await auto_rename_files(client, message)
+
+        self.assertEqual(client.sent, [])
+        self.assertNotIn(321, ACTIVE_JOBS)
+        self.assertIn("cancelled", message.status.texts[-1].lower())
+        self.assertTrue(all(not os.path.exists(path) for path in client.temporary_dirs))
+
+    async def test_cancel_stops_active_upload_and_cleans_output(self):
+        message = FakeMessage()
+        client = FakeClient(b"sample-media-data")
+        client.cancel_on_upload = True
+        ACTIVE_JOBS.clear()
+        with (
+            patch.object(AshutoshGoswami24, "get_format_template", new=AsyncMock(return_value="{title}")),
+            patch.object(AshutoshGoswami24, "get_media_preference", new=AsyncMock(return_value="document")),
+            patch.object(AshutoshGoswami24, "get_metadata", new=AsyncMock(return_value=False)),
+            patch.object(AshutoshGoswami24, "get_thumbnail", new=AsyncMock(return_value=None)),
+            patch.object(AshutoshGoswami24, "get_caption", new=AsyncMock(return_value=None)),
+        ):
+            await auto_rename_files(client, message)
+
+        self.assertEqual(client.sent, [])
+        self.assertNotIn(321, ACTIVE_JOBS)
+        self.assertIn("cancelled", message.status.texts[-1].lower())
+        self.assertTrue(all(not os.path.exists(path) for path in client.temporary_dirs))
 
 
 if __name__ == "__main__":
