@@ -45,11 +45,15 @@ def build_encode_command(
     scale = rf"scale=-2:min(ih\,{resolution})"
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", input_path,
-        "-map", "0", "-map_metadata", "0", "-vf", scale,
+        # `0` maps every stream, including attached cover-art video tracks.
+        # Encode only the first real video stream (`V` excludes attached pics,
+        # thumbnails, and cover art), then retain the input's audio/subtitles.
+        "-map", "0:V:0", "-map", "0:a?", "-map", "0:s?", "-map", "0:t?",
+        "-map_metadata", "0", "-vf", scale,
         # Favor encoding speed; keep CRF unchanged so this does not deliberately
         # trade away the configured visual-quality target. Expect larger files.
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
-        "-c:a", "copy", "-c:s", "copy",
+        "-c:a", "copy", "-c:s", "copy", "-c:t", "copy",
         *(metadata_arguments(fields or {})), "-progress", "pipe:1", "-stats_period", "1", "-nostats", output_path,
     ]
 
