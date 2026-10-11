@@ -17,10 +17,12 @@ from helper.ffmpeg_tools import (
     MediaProcessingCancelled,
     build_encode_command,
     build_metadata_command,
+    probe_duration,
     run_process,
 )
 from helper.filename import render_template
 from helper.job_control import ACTIVE_JOBS
+from helper.progress import ProgressReporter
 from helper.utils import convert, humanbytes
 
 logger = logging.getLogger(__name__)
@@ -136,10 +138,13 @@ async def auto_rename_files(client, message):
     status = None
     try:
         work_dir = tempfile.mkdtemp(prefix=f"aniflix-{user_id}-")
-        status = await message.reply_text("Downloading the file…")
+        status = await message.reply_text("Download Started...")
+        download_progress = ProgressReporter(status, "Download Started...")
+        await download_progress.begin_transfer(file_size)
         source_path = await client.download_media(
             message,
             file_name=os.path.join(work_dir, "source" + extension),
+            progress=download_progress.transfer,
         )
         if not source_path or not os.path.isfile(source_path):
             raise RuntimeError("Telegram download returned no local file")
@@ -153,21 +158,52 @@ async def auto_rename_files(client, message):
 
         metadata = await _get_metadata_fields(user_id)
         is_video = media_kind == "video" or mime_type.startswith("video/") or extension.lower() in VIDEO_EXTENSIONS
+        duration_seconds = float(duration or 0)
+        if (Config.ENCODE_RESOLUTIONS and is_video) or metadata:
+            if duration_seconds <= 0:
+                try:
+                    duration_seconds = await probe_duration(
+                        renamed_path,
+                        timeout=min(30, Config.FFMPEG_TIMEOUT),
+                        cancel_event=cancel_event,
+                    ) or 0.0
+                except MediaProcessingCancelled:
+                    raise
+                except Exception:
+                    logger.warning("Could not determine media duration; progress percentage may be unavailable", exc_info=True)
+            if duration_seconds > 0:
+                duration = int(round(duration_seconds))
         outputs = []
 
         if Config.ENCODE_RESOLUTIONS and is_video:
-            await status.edit("Encoding configured resolutions…")
             for resolution in Config.ENCODE_RESOLUTIONS:
                 if cancel_event.is_set():
                     raise MediaProcessingCancelled("Cancelled before encoding")
                 encoded_name = f"{output_stem}_{resolution}p.mkv"
                 encoded_path = os.path.join(work_dir, encoded_name)
                 command = build_encode_command(renamed_path, encoded_path, resolution, metadata)
+                encode_progress = ProgressReporter(status, f"Encoding {resolution}p Started...")
+                await encode_progress.media(0, duration_seconds, encoded_path, file_size, force=True)
+
+                async def report_encode_progress(current_seconds, reporter=encode_progress, output=encoded_path):
+                    await reporter.media(current_seconds, duration_seconds, output, file_size)
+
                 code, _, stderr = await run_process(
-                    command, timeout=Config.FFMPEG_TIMEOUT, cancel_event=cancel_event
+                    command,
+                    timeout=Config.FFMPEG_TIMEOUT,
+                    cancel_event=cancel_event,
+                    progress_callback=report_encode_progress,
                 )
                 if code != 0 or not os.path.isfile(encoded_path):
                     raise RuntimeError(f"FFmpeg failed for {resolution}p: {stderr[-1500:]}")
+                await encode_progress.media(
+                    duration_seconds or encode_progress.last_media_seconds,
+                    duration_seconds,
+                    encoded_path,
+                    file_size,
+                    force=True,
+                    complete=True,
+                )
                 outputs.append((encoded_path, encoded_name))
         elif metadata:
             # Use a separate directory so FFmpeg can keep the final basename
@@ -176,10 +212,27 @@ async def auto_rename_files(client, message):
             os.makedirs(metadata_dir, exist_ok=True)
             metadata_path = os.path.join(metadata_dir, output_name)
             command = build_metadata_command(renamed_path, metadata_path, metadata)
+            metadata_progress = ProgressReporter(status, "Preparing metadata...")
+            await metadata_progress.media(0, duration_seconds, metadata_path, file_size, force=True)
+
+            async def report_metadata_progress(current_seconds):
+                await metadata_progress.media(current_seconds, duration_seconds, metadata_path, file_size)
+
             code, _, stderr = await run_process(
-                command, timeout=Config.FFMPEG_TIMEOUT, cancel_event=cancel_event
+                command,
+                timeout=Config.FFMPEG_TIMEOUT,
+                cancel_event=cancel_event,
+                progress_callback=report_metadata_progress,
             )
             if code == 0 and os.path.isfile(metadata_path):
+                await metadata_progress.media(
+                    duration_seconds or metadata_progress.last_media_seconds,
+                    duration_seconds,
+                    metadata_path,
+                    file_size,
+                    force=True,
+                    complete=True,
+                )
                 outputs.append((metadata_path, output_name))
             else:
                 logger.warning("Metadata remux failed; uploading the renamed original: %s", stderr[-1500:])
@@ -189,27 +242,33 @@ async def auto_rename_files(client, message):
 
         thumb_path = await _prepare_thumbnail(client, user_id, message, work_dir)
         custom_caption = await AshutoshGoswami24.get_caption(user_id)
-        await status.edit("Uploading completed file(s)…")
         for index, (path, filename) in enumerate(outputs, start=1):
             if cancel_event.is_set():
                 raise MediaProcessingCancelled("Cancelled before upload")
             caption = _caption(custom_caption, filename, file_size, duration)
             if len(outputs) > 1:
                 caption = f"{caption}\n\n({index}/{len(outputs)})"
+            upload_heading = "Upload Started..."
+            if len(outputs) > 1:
+                upload_heading += f" ({index}/{len(outputs)})"
+            upload_progress = ProgressReporter(status, upload_heading)
+            await upload_progress.begin_transfer(os.path.getsize(path))
             if preferred_kind == "video":
                 await _send_with_floodwait(
                     client.send_video, message.chat.id, video=path, caption=caption,
                     thumb=thumb_path, duration=duration, file_name=filename,
+                    progress=upload_progress.transfer,
                 )
             elif preferred_kind == "audio":
                 await _send_with_floodwait(
                     client.send_audio, message.chat.id, audio=path, caption=caption,
                     thumb=thumb_path, duration=duration, file_name=filename,
+                    progress=upload_progress.transfer,
                 )
             else:
                 await _send_with_floodwait(
                     client.send_document, message.chat.id, document=path, caption=caption,
-                    thumb=thumb_path, file_name=filename,
+                    thumb=thumb_path, file_name=filename, progress=upload_progress.transfer,
                 )
         await status.edit("Upload complete ✅")
     except MediaProcessingCancelled:
