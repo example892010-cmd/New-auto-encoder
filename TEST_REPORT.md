@@ -1,63 +1,54 @@
 # Test Report
 
-## Result
+## Results
 
-**26 tests passed; 0 failed; 0 skipped** under both Python **3.10.21** and **3.12.3**. The Python 3.10 run used the repository's complete `requirements.txt`, including `TgCrypto`. Ruff's undefined-name/unused-import checks and Python compilation both passed. FFmpeg and ffprobe were available in the sandbox.
+**31 tests passed; 0 failed; 0 skipped** under Python **3.10.21** and **3.12.3**. Ruff's undefined-name/unused-import checks and source compilation passed. The checked-in `render.yaml` parsed successfully and contains the Docker runtime plus the optional encoding and timeout environment variables.
 
 ## Executed checks
 
-From `/home/ubuntu/work/auto-rename-bot`:
+The full suite was run from the uploaded repository copy with placeholder-only environment values:
 
 ```bash
+DB_URL='mongodb://127.0.0.1:27017' \
+DB_NAME=autorename_test API_ID=12345 API_HASH=test-hash BOT_TOKEN='123456:TEST' \
+/tmp/autorename310/bin/python -m unittest discover -s tests -v
+
 DB_URL='mongodb://127.0.0.1:27017' \
 DB_NAME=autorename_test API_ID=12345 API_HASH=test-hash BOT_TOKEN='123456:TEST' \
 /tmp/autorename-venv/bin/python -m unittest discover -s tests -v
 ```
 
-For the Python 3.10.21 run, the same command used `/tmp/autorename310/bin/python` instead. Outcome: `Ran 26 tests ... OK` on both runtimes.
+Both runs reported `Ran 31 tests ... OK`. Unit tests mock Telegram calls and Mongo collections; the integration tests generate synthetic media and execute local FFmpeg/ffprobe.
 
-```bash
-/tmp/autorename-venv/bin/python -m compileall -q -f .
-```
-
-Outcome: **PASS**.
+Additional checks:
 
 ```bash
 uvx --from ruff ruff check --select F bot.py config.py helper plugins tests
+/tmp/autorename310/bin/python -m compileall -q -f bot.py config.py route.py helper plugins tests
+/tmp/autorename-venv/bin/python -m compileall -q -f bot.py config.py route.py helper plugins tests
 ```
 
-Outcome: **PASS** after removing the two unused imports reported on the first run.
+All passed. `render.yaml` was parsed with PyYAML and checked for `runtime: docker`, absence of a native-only `buildCommand`, and the optional encoding/timeout variables.
 
-The values above were non-production placeholders. Test code mocks Telegram operations and the Mongo collection; it does not connect to a live bot, MongoDB, or Render.
+## Coverage highlights
 
-## Coverage and concrete outcomes
+- Pyrogram 2.0.80 plugin import and registration: **PASS** — 29 handlers loaded; group counts `{-1: 2, 0: 27}` after registrations complete.
+- Filename parsing, template replacement, and path sanitization: **PASS**.
+- Mongo user preference upsert behavior: **PASS** using mocks.
+- Mocked media rename/caption/upload and temporary-file cleanup: **PASS**.
+- `/cancel` during a Telegram download and during an upload: **PASS** in mocks that exercise Pyrogram's documented `stop_transmission` callback mechanism; the job lock and temporary files were cleaned in both cases.
+- `WEBHOOK` health endpoint toggle: **PASS** — mocked bot startup skips the server when disabled and starts it when enabled, without connecting to Telegram.
+- FFmpeg command construction and timeout/cancellation: **PASS**.
+- Synthetic video encoding at configured profiles, metadata remuxing, and the attached-cover multistream regression: **PASS**. The regression verifies that the encoder selects the normal video stream, preserves audio, and keeps a matching-time frame within its test threshold.
+- Progress display and transfer callbacks: **PASS**.
+- Invalid zero FFmpeg timeout: **PASS** — rejected at configuration import with an actionable error.
+- Render YAML syntax and expected Docker configuration: **PASS**.
 
-| Area | Result |
-|---|---|
-| Pyrogram 2.0.80 plugin import/load | **PASS** — 29 actual handlers loaded |
-| Handler group counts | **PASS** — `{-1: 2, 0: 27}` after queued registrations run |
-| Empty early snapshot timing | **PASS** — immediate pre-yield snapshot can be `{}`, then becomes `{-1: 2, 0: 27}` |
-| Working-directory recovery | **PASS** — preflight started from `/tmp` anchors to the repository plugin folder |
-| `/help`, `/about`, `/autorename`, `/setmedia`, `/metadata` filters | **PASS**, including `/autorename@aniflix_bot ...` argument parsing |
-| Metadata/subscription callback isolation | **PASS** — those callbacks do not match the menu handler |
-| Filename parsing and sanitization | **PASS** — SxxExx, EPx, dotted names, quality, path safety, and template substitution |
-| Mongo persistence | **PASS** — mocked upserts do not conflict on fields or remove stored preferences |
-| Mocked Telegram media path | **PASS** — rename, caption, upload call, active-job cleanup, and temporary-directory cleanup |
-| Metadata-remux upload name | **PASS** — verifies the externally uploaded filename remains the user's requested output name |
-| Initial status-send failure | **PASS** — confirms the user's active-job lock is cleared |
-| FFmpeg argument safety | **PASS** — flat metadata option/value pairs; no shell interpolation |
-| Generated sample encoding | **PASS** — 480p, 720p, and 1080p encode commands executed; a 640×360 input remained 640×360 (no upscaling) |
-| Attached-cover multistream regression | **PASS** — synthetic source has a moving video, attached cover-art stream, and audio; legacy `-map 0` produces two video streams, while the new mapping emits only the real video, preserves the audio codec/start, and keeps a same-timestamp frame within the test's image-difference threshold |
-| Faster encoding preset | **PASS** — command now uses `ultrafast` with CRF still 26. On a 10-second synthetic 1280×720 clip, local encode time was 1.079s (`veryfast`) vs 0.569s (`ultrafast`); output was 2.04 MB vs 7.25 MB. |
-| Metadata remux | **PASS** — sample output retains the regression title |
-| Progress display | **PASS** — requested bar layout, upload/download byte callbacks, and real FFmpeg progress-pipe updates |
-| Duration probing | **PASS** — ffprobe duration read from the generated sample clip |
-| FFmpeg timeout and cancellation | **PASS** — test child processes were terminated on both timeout and user-cancel events |
-| Python source compilation | **PASS** |
+The earlier synthetic preset benchmark remains illustrative, not a production benchmark: with CRF unchanged at 26, `ultrafast` completed a 10-second synthetic 1280×720 clip in 0.569s versus 1.079s for `veryfast`, while the output increased from 2.04 MB to 7.25 MB. Faster encoding trades compression efficiency for speed and does not guarantee pixel-identical output.
 
-## Limits
+## Not verified
 
-- Python 3.10.21 was explicitly provisioned, all declared dependencies were installed into an isolated environment, and all tests passed there. The Docker image itself was not built because Docker is not available in the sandbox.
-- No live Telegram API/bot token, production MongoDB, or Render deployment was used. This report therefore proves local loader/helper/media behavior, not live network behavior or a production rollout.
-- The preset timing/size comparison is a small synthetic local benchmark, not a Render or user-file benchmark. CRF stays at 26, but changing an encoder preset cannot guarantee pixel-identical output; faster encoding trades compression efficiency for speed and may increase upload/storage size.
-- The user-provided attachment described a visual mismatch but did not include the original or processed video (or the referenced screenshots). The new regression reproduces and fixes the confirmed extra-video-stream behavior on a synthetic attached-cover example, but the exact basket-to-court discrepancy in the user's media remains unverified pending those files.
+- Docker was unavailable in the sandbox, so the image itself was not built.
+- No live Telegram bot/token, production MongoDB, GitHub repository, or Render service was accessed. The test results prove offline regression behavior, not live production operation.
+- The exact user-provided video mismatch remains unverified because the original and processed video files were not included in the repository attachment.
+- Encoding remains opt-in. If `ENCODE_RESOLUTIONS` is unset in Render, video transcoding does not run; set a profile explicitly to enable it.

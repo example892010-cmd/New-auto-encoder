@@ -12,7 +12,11 @@
 - `DB_NAME` - Your MongoDB database name. **Optional**.
 - `FORCE_SUB_CHANNELS` - Your force subscription channel usernames without `@`. **Optional**. Use format `1CHANNEL,2CHANNEL`.
 - `START_PIC` - Start message photo. **Optional**.
-- `WEBHOOK` - Set to `True` if your server requires web services, otherwise set to `False`. **Optional**.
+- `WEBHOOK` - Enable the optional HTTP health endpoint. Keep it `True` for Render web services; set it to `False` only when running as a worker. **Optional**.
+- `ENCODE_RESOLUTIONS` - Optional comma-separated output profiles: `480`, `720`, and/or `1080`. Leave unset to disable transcoding. FFmpeg is installed by the included Dockerfile.
+- `FFMPEG_TIMEOUT` - Positive maximum runtime for each FFmpeg process in seconds; defaults to `1800`. **Optional**.
+
+For Render deployments that need metadata or video encoding, use the Docker runtime configured in `render.yaml`; the Dockerfile installs FFmpeg.
 
 ## Deploy to Koyeb
 
@@ -41,11 +45,12 @@
 - Custom caption support.
 - Custom start-up picture.
 - Force subscription available.
-- Supports unlimited renaming at a time.
+- Processes one media job per user at a time; different users can work concurrently.
 - Deploy to Koyeb, Heroku, and Railway.
 - Automatically rename your files.
 - Set media type to upload file type.
 - METADATA add with rename.
+- Optional H.264 resolution encoding (480p, 720p, or 1080p).
 
 ### 🚦 User Commands
 
@@ -60,6 +65,7 @@ delthumb - To delete current thumbnail.
 set_caption - set a custom caption.
 see_caption - see your custom caption.
 del_caption - delete custom caption.
+cancel - Stop the active download, encoding, or upload.
 restart - To restart the bot [FOR ADMINS USE ONLY]
 broadcast - Message Broadcast command [FOR ADMINS USE ONLY].
 status - Check bot status [FOR ADMINS USE ONLY].
@@ -81,4 +87,3 @@ status - Check bot status [FOR ADMINS USE ONLY].
 Credits: 🎖️ [𝗔𝘀𝗵𝘂𝘁𝗼𝘀𝗵𝗚𝗼𝘀𝘄𝗮𝗺𝗶𝟮𝟰](https://github.com/AshutoshGoswami24) 🤖
 
 _Last Edited on: 08/21/2024, 10:12:42 AM_
-

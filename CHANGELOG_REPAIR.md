@@ -1,41 +1,44 @@
 # Repair Changelog
 
-## Runtime and configuration
+## Runtime and deployment
 
-- **`bot.py`** — Pins startup to the repository root, pre-imports plugins with full tracebacks, reports discovered and post-start handler counts, refuses zero-handler startup, and treats the health route/admin notifications as optional.
-- **`config.py`** — Preserves existing environment names and adds optional `ENCODE_RESOLUTIONS` (`480`, `720`, `1080`) and `FFMPEG_TIMEOUT` controls, plus explicit `/about` copy.
-- **`Dockerfile`** — Uses Python 3.10 slim, installs FFmpeg and compiler tools needed for the declared dependencies, and starts with `python3 bot.py`.
+- **`bot.py`** — Pins startup to the repository root, pre-imports plugins with full tracebacks, reports discovered and post-start handler counts, refuses zero-handler startup, and honors `WEBHOOK` so worker deployments can skip the optional HTTP health server.
+- **`config.py`** — Preserves the existing environment-variable names, adds optional `ENCODE_RESOLUTIONS` and `FFMPEG_TIMEOUT` controls, rejects unsupported resolutions and non-positive FFmpeg timeouts, and includes `/about` copy.
+- **`Dockerfile` and `render.yaml`** — The Render Blueprint now selects the existing Dockerfile, which installs FFmpeg and launches `python3 bot.py`; it also exposes the optional encoding and timeout variables. No live Render settings were changed.
+- **`RENDER_DEPLOYMENT.md`** — Documents the verified deployment configuration, required environment, opt-in encoding, and production verification boundaries.
+- **`README.md`** — Corrects the concurrency claim and documents the health toggle, optional encoding, FFmpeg runtime requirement, and `/cancel`.
 
 ## Plugin behavior
 
 - **`plugins/start_&_cb.py` → `plugins/start_and_callbacks.py`** — Renamed to an ordinary Python module name; adds working `/help` and `/about` commands and limits menu callbacks to their own data values.
 - **`plugins/thumb_&_cap.py` → `plugins/thumbnail_caption.py`** — Renamed to a conventional Python module name; existing thumbnail and caption commands are retained.
 - **`plugins/auto_rename.py`** — Uses Pyrogram's parsed command arguments for formats with spaces/braces and validates `/setmedia` values.
-- **`plugins/file_rename.py`** — Adds path-safe template rendering, per-user job isolation, generated output variants when configured, safe metadata remux/encoding, thumbnail normalization, timeout/cancel support, flood-wait handling, user-visible errors, and guaranteed cleanup. It now shows the requested live progress-bar style during file download, each encoding/remux stage, and Telegram upload. Remuxes keep the intended Telegram upload filename, optional-thumbnail failures do not block uploads, and a failed initial status reply no longer strands the user's busy lock or temp directory.
+- **`plugins/file_rename.py`** — Provides path-safe template rendering, per-user job isolation, generated output variants when configured, safe metadata remux/encoding, thumbnail normalization, flood-wait handling, user-visible errors, and guaranteed cleanup. It shows the requested progress bar during Telegram transfers and FFmpeg work, preserves the intended upload filename, and now stops active Telegram downloads/uploads when cancellation is requested.
 - **`plugins/force_subs.py`** — Runs subscription checks at an earlier handler priority and only handles its own subscription callback.
 - **`plugins/admin_panel.py`** — Reports tutorial failures via logging and a user-visible response instead of a silent print.
-- **`plugins/cancel.py`** — Adds `/cancel` for the active media job.
+- **`plugins/cancel.py`** — `/cancel` requests safe cancellation of the active download, FFmpeg process, or upload.
 
 ## Shared helpers and storage
 
 - **`helper/__init__.py`, `plugins/__init__.py`** — Make the module roots explicit Python packages.
 - **`helper/filename.py`** — Parses common episode/quality filename conventions, substitutes legacy/current template markers, and sanitizes file basenames.
-- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; H.264 encoding now selects the first normal video stream (excluding attached cover-art/thumbnail tracks) and preserves audio, subtitles, and attachments. The x264 preset is `ultrafast` while CRF remains 26, prioritizing speed without intentionally lowering the configured quality target; faster presets can produce larger files. It also parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout/cancellation.
+- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; encoding selects the first normal video stream, excludes attached cover art, and preserves audio, subtitles, and attachments. The x264 preset is `ultrafast` with CRF 26; the speed/file-size tradeoff is documented. It also parses FFmpeg progress, probes duration, and supports process timeout/cancellation.
 - **`helper/progress.py`** — Formats a throttled Telegram progress bar with byte/speed/ETA for transfers and percentage/output-size/realtime-speed/ETA for media processing.
 - **`helper/job_control.py`** — Tracks in-memory per-user cancellation events.
 - **`helper/database.py`** — Keeps existing fields/defaults and uses non-destructive upserts for preferences, avoiding first-use failures and Mongo update-path conflicts.
 
 ## Regression coverage
 
+- **`tests/test_config.py`** — Rejects a zero FFmpeg timeout without external services.
+- **`tests/test_health_toggle.py`** — Verifies the `WEBHOOK` setting starts or skips the health server without contacting Telegram.
 - **`tests/test_helpers.py`** — Filename parsing/sanitization, FFmpeg argument construction, and subprocess cancellation.
 - **`tests/test_database.py`** — Mocked Mongo upsert behavior and preservation of existing user data.
-- **`tests/test_media_handler.py`** — Mocked media download/rename/caption/upload and temp cleanup, with no Telegram or Mongo connection.
-- **`tests/test_plugin_registration.py`** — Pyrogram 2.0.80 plugin loading, group counts, command parsing (including bot mentions), callback isolation, non-repository startup directory, and early-snapshot timing.
-- **`tests/test_ffmpeg_integration.py`** — Generates test videos and validates all supported profiles, metadata remux, and a multistream file with attached cover art. It confirms the legacy `-map 0` behavior emitted an extra video stream, then verifies primary-frame similarity at a matching timestamp and audio preservation with the corrected mapping.
-- **Progress regression coverage** — Confirms the requested progress layout, Pyrogram transfer callback wiring, FFmpeg progress parsing, and live progress output from a real generated sample clip.
+- **`tests/test_media_handler.py`** — Mocked media download/rename/caption/upload, active transfer cancellation, and temporary-file cleanup; no Telegram or Mongo connection.
+- **`tests/test_plugin_registration.py`** — Pyrogram 2.0.80 plugin loading, group counts, command parsing, callback isolation, non-repository startup directory, and early-snapshot timing.
+- **`tests/test_ffmpeg_integration.py`** — Generated-video tests for supported profiles, metadata remux, and attached-cover multistream behavior, including matched-time frame and audio checks.
+- **Progress regression coverage** — Confirms the requested progress layout, Pyrogram transfer callback wiring, FFmpeg progress parsing, and real progress output from a generated sample clip.
 
-## Deliberately not changed
+## Scope and limits
 
-- The live GitHub repository/branch and Render dashboard settings were not modified.
-- `render.yaml` remains the existing Python-runtime blueprint. The deployment note recommends selecting the included Dockerfile when FFmpeg-backed metadata/encoding is required; the live Render runtime was not switched.
-- Existing secrets, MongoDB data, bot identity, channel links, and branding were not replaced.
+- The uploaded source copy was audited and repaired. No live GitHub repository, Render dashboard, Telegram bot, or production MongoDB was accessed or changed.
+- The Docker image was not built because Docker is unavailable in the sandbox. Live Telegram delivery, production MongoDB operations, and a Render deploy remain unverified.

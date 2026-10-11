@@ -1,11 +1,8 @@
 services:
   - type: web
+    runtime: docker
     plan: free
     name: ANIFLIX Auto Rename Bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python3 bot.py
-    repo: 
     branch: main
     autoDeploy: false
     envVars:
@@ -28,4 +25,8 @@ services:
       - key: ADMIN
         sync: false
       - key: WEBHOOK
+        value: "True"
+      - key: ENCODE_RESOLUTIONS
+        sync: false
+      - key: FFMPEG_TIMEOUT
         sync: false

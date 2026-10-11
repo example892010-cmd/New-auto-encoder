@@ -96,12 +96,13 @@ class Bot(Client):
             logger.error("Pyrogram started without handlers; refusing a misleading healthy startup")
             raise RuntimeError("Pyrogram registered zero handlers after initialization")
 
-        try:
-            self._web_runner = web.AppRunner(await web_server())
-            await self._web_runner.setup()
-            await web.TCPSite(self._web_runner, "0.0.0.0", Config.PORT).start()
-        except Exception:
-            logger.exception("Optional Render health web service could not be started")
+        if Config.WEBHOOK:
+            try:
+                self._web_runner = web.AppRunner(await web_server())
+                await self._web_runner.setup()
+                await web.TCPSite(self._web_runner, "0.0.0.0", Config.PORT).start()
+            except Exception:
+                logger.exception("Optional Render health web service could not be started")
 
         logger.info("%s started successfully | Pyrogram %s | Layer %s", me.first_name, __version__, layer)
 

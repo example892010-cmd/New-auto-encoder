@@ -42,6 +42,8 @@ class Config:
     if any(resolution not in {480, 720, 1080} for resolution in ENCODE_RESOLUTIONS):
         raise ValueError("ENCODE_RESOLUTIONS accepts only 480, 720, and/or 1080")
     FFMPEG_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT", "1800") or "1800")
+    if FFMPEG_TIMEOUT <= 0:
+        raise ValueError("FFMPEG_TIMEOUT must be a positive number of seconds")
 
 
 class Txt:

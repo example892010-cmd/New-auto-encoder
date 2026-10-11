@@ -1,24 +1,14 @@
 # Render Deployment Notes
 
-## Deployment settings were not changed
+## Checked-in deployment configuration
 
-The live Render service and the GitHub repository were not accessed or modified. The existing `render.yaml` is left unchanged. It currently declares a native Python service with start command `python3 bot.py`.
+The repository's `render.yaml` now selects Render's Docker runtime and builds the root `Dockerfile`. This is required for predictable FFmpeg-backed metadata remuxing and resolution encoding: the Dockerfile installs the FFmpeg executable, while a native Python runtime does not guarantee it. The container starts with `python3 bot.py` from the Dockerfile's `CMD`. Render's Blueprint reference documents `runtime: docker` and Dockerfile-based services: [Blueprint YAML reference](https://render.com/docs/blueprint-spec) and [Docker on Render](https://render.com/docs/docker).
 
-## Recommended runtime when metadata/encoding must work
+The Blueprint sets `WEBHOOK=True` so the Render web service binds its health endpoint. The application now honors `WEBHOOK=False` if it is run as a worker without an HTTP health route. The checked-in file does not contain production credentials. No live Render service, GitHub repository, or MongoDB settings were accessed or changed.
 
-Use Render's **Docker** runtime with this repository's `Dockerfile`. It installs FFmpeg and starts the bot with:
+## Environment variables
 
-```bash
-python3 bot.py
-```
-
-The existing native Python blueprint may not provide the `ffmpeg` executable. Filename renaming can still work without FFmpeg, but metadata remux and configured encodes require it. The bot falls back to the renamed original if metadata remux fails; configured encode failures are shown to the user and logged.
-
-If you choose to keep the native Python runtime, confirm `ffmpeg -version` is available in that Render environment before enabling metadata/encoding workflows. Do not assume the Docker image is in use just because a `Dockerfile` exists.
-
-## Required and optional environment variables
-
-Set the existing secrets in Render's Environment page; do not commit them to the repository:
+Set secrets in Render's Environment page; never commit them to the repository.
 
 | Variable | Required | Purpose |
 |---|---:|---|
@@ -32,32 +22,18 @@ Set the existing secrets in Render's Environment page; do not commit them to the
 | `FORCE_SUB_CHANNELS` | No | Comma-separated required channel usernames; legacy `FORCE_SUB` is also accepted |
 | `START_PIC` | No | Optional Telegram file ID or URL |
 | `PORT` | No | Health endpoint port; defaults to `8080` |
-| `WEBHOOK` | No | Health endpoint toggle; defaults to `True` |
+| `WEBHOOK` | No | Health endpoint toggle; defaults to `True`; keep `True` for this Render web service |
 | `ENCODE_RESOLUTIONS` | No | Optional comma-separated profiles: `480`, `720`, `1080` |
-| `FFMPEG_TIMEOUT` | No | Per-process timeout in seconds; defaults to `1800` |
+| `FFMPEG_TIMEOUT` | No | Positive per-process timeout in seconds; defaults to `1800` |
 
-No new secret is required. Existing environment-variable names remain supported.
+## Encoding behavior
 
-### Encoding behavior
+Leave `ENCODE_RESOLUTIONS` unset to run rename and metadata-remux operations without transcoding. Set `ENCODE_RESOLUTIONS=720` for one 720p output, or `ENCODE_RESOLUTIONS=480,720,1080` for the three requested profiles. The blueprint prompts for this optional value; it does not enable transcoding by default.
 
-- Leave `ENCODE_RESOLUTIONS` unset to preserve the normal rename and metadata-remux workflow without transcoding.
-- Set `ENCODE_RESOLUTIONS=720` for a single 720p rendition, or `ENCODE_RESOLUTIONS=480,720,1080` for three outputs per video.
-- The encoder uses H.264 (`libx264`), `veryfast`, CRF 26, copies audio/subtitle streams, and caps height at the requested profile without upscaling.
-- Non-video files do not enter the resolution-encoding loop.
-- The Docker image includes FFmpeg; the native Python blueprint is not guaranteed to.
+Encoding uses H.264 (`libx264`) with the `ultrafast` preset and CRF 26. It copies audio, subtitles, and attachments, selects the first normal video stream rather than attached cover art, and caps output height without upscaling. The faster preset can increase file size; CRF remains unchanged, but this does not guarantee pixel-identical output.
 
-## Start command and first checks
+## Post-deploy checks
 
-The start command remains **`python3 bot.py`**. The container's `CMD` runs that same command.
+Confirm the deployed commit and required environment variables, then check logs for plugin preflight and registered handler counts similar to `{-1: 2, 0: 27}`. Test `/start`, `/help`, `/about`, `/autorename`, `/setmedia`, and `/cancel`. Send one small file and one short video. If encoding is enabled, verify one configured profile first, then test additional profiles. Confirm `/cancel` stops an active download, encoding process, or upload and removes temporary files.
 
-On deployment, check the logs for lines similar to:
-
-```text
-Plugin preflight handler counts by group: {-1: 2, 0: 27}
-Pyrogram registered handler counts by group: {-1: 2, 0: 27}
-... started successfully ...
-```
-
-Do not use a handler-count snapshot taken before plugin-registration tasks have run. In Pyrogram 2.0.80, reading immediately after discovery can return `{}` even though handlers are queued for registration.
-
-Then verify `/start`, `/help`, `/about`, set a filename with `/autorename {title} S{season} EP{episode} [{quality}]`, and send one small test file. If encoding is enabled, send a short video and verify each configured output. MongoDB must permit connections from the Render service; do not change database access rules blindly or expose credentials in logs.
+The local regression suite passed in Python 3.10 and 3.12, but the Docker image, live Telegram API, production MongoDB, and Render deployment were not run from this audit. Successful local checks therefore do not prove the production service is fully working.
