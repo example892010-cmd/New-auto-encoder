@@ -2,7 +2,7 @@
 
 ## Result
 
-**23 tests passed; 0 failed; 0 skipped** under both Python **3.10.21** and **3.12.3**. The Python 3.10 run used the repository's complete `requirements.txt`, including `TgCrypto`. Ruff's undefined-name/unused-import checks and Python compilation both passed. FFmpeg and ffprobe were available in the sandbox.
+**25 tests passed; 0 failed; 0 skipped** under both Python **3.10.21** and **3.12.3**. The Python 3.10 run used the repository's complete `requirements.txt`, including `TgCrypto`. Ruff's undefined-name/unused-import checks and Python compilation both passed. FFmpeg and ffprobe were available in the sandbox.
 
 ## Executed checks
 
@@ -14,7 +14,7 @@ DB_NAME=autorename_test API_ID=12345 API_HASH=test-hash BOT_TOKEN='123456:TEST' 
 /tmp/autorename-venv/bin/python -m unittest discover -s tests -v
 ```
 
-Outcome: `Ran 23 tests ... OK` on Python 3.10.21 and again on Python 3.12.3.
+For the Python 3.10.21 run, the same command used `/tmp/autorename310/bin/python` instead. Outcome: `Ran 25 tests ... OK` on both runtimes.
 
 ```bash
 /tmp/autorename-venv/bin/python -m compileall -q -f .
@@ -48,6 +48,8 @@ The values above were non-production placeholders. Test code mocks Telegram oper
 | FFmpeg argument safety | **PASS** — flat metadata option/value pairs; no shell interpolation |
 | Generated sample encoding | **PASS** — 480p, 720p, and 1080p encode commands executed; a 640×360 input remained 640×360 (no upscaling) |
 | Metadata remux | **PASS** — sample output retains the regression title |
+| Progress display | **PASS** — requested bar layout, upload/download byte callbacks, and real FFmpeg progress-pipe updates |
+| Duration probing | **PASS** — ffprobe duration read from the generated sample clip |
 | FFmpeg timeout and cancellation | **PASS** — test child processes were terminated on both timeout and user-cancel events |
 | Python source compilation | **PASS** |
 

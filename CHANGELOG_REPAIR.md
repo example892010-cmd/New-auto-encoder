@@ -11,7 +11,7 @@
 - **`plugins/start_&_cb.py` → `plugins/start_and_callbacks.py`** — Renamed to an ordinary Python module name; adds working `/help` and `/about` commands and limits menu callbacks to their own data values.
 - **`plugins/thumb_&_cap.py` → `plugins/thumbnail_caption.py`** — Renamed to a conventional Python module name; existing thumbnail and caption commands are retained.
 - **`plugins/auto_rename.py`** — Uses Pyrogram's parsed command arguments for formats with spaces/braces and validates `/setmedia` values.
-- **`plugins/file_rename.py`** — Adds path-safe template rendering, per-user job isolation, generated output variants when configured, safe metadata remux/encoding, thumbnail normalization, timeout/cancel support, flood-wait handling, user-visible errors, and guaranteed cleanup. Remuxes keep the intended Telegram upload filename, optional-thumbnail failures do not block uploads, and a failed initial status reply no longer strands the user's busy lock or temp directory.
+- **`plugins/file_rename.py`** — Adds path-safe template rendering, per-user job isolation, generated output variants when configured, safe metadata remux/encoding, thumbnail normalization, timeout/cancel support, flood-wait handling, user-visible errors, and guaranteed cleanup. It now shows the requested live progress-bar style during file download, each encoding/remux stage, and Telegram upload. Remuxes keep the intended Telegram upload filename, optional-thumbnail failures do not block uploads, and a failed initial status reply no longer strands the user's busy lock or temp directory.
 - **`plugins/force_subs.py`** — Runs subscription checks at an earlier handler priority and only handles its own subscription callback.
 - **`plugins/admin_panel.py`** — Reports tutorial failures via logging and a user-visible response instead of a silent print.
 - **`plugins/cancel.py`** — Adds `/cancel` for the active media job.
@@ -20,7 +20,8 @@
 
 - **`helper/__init__.py`, `plugins/__init__.py`** — Make the module roots explicit Python packages.
 - **`helper/filename.py`** — Parses common episode/quality filename conventions, substitutes legacy/current template markers, and sanitizes file basenames.
-- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; supports process timeout and cancellation.
+- **`helper/ffmpeg_tools.py`** — Builds shell-free FFmpeg argument lists for metadata and H.264 encodes; parses FFmpeg's machine-readable progress stream, probes media duration, and supports process timeout and cancellation.
+- **`helper/progress.py`** — Formats a throttled Telegram progress bar with byte/speed/ETA for transfers and percentage/output-size/realtime-speed/ETA for media processing.
 - **`helper/job_control.py`** — Tracks in-memory per-user cancellation events.
 - **`helper/database.py`** — Keeps existing fields/defaults and uses non-destructive upserts for preferences, avoiding first-use failures and Mongo update-path conflicts.
 
@@ -31,6 +32,7 @@
 - **`tests/test_media_handler.py`** — Mocked media download/rename/caption/upload and temp cleanup, with no Telegram or Mongo connection.
 - **`tests/test_plugin_registration.py`** — Pyrogram 2.0.80 plugin loading, group counts, command parsing (including bot mentions), callback isolation, non-repository startup directory, and early-snapshot timing.
 - **`tests/test_ffmpeg_integration.py`** — Generates a short test video and validates all supported profiles plus metadata remux using the installed FFmpeg/ffprobe.
+- **Progress regression coverage** — Confirms the requested progress layout, Pyrogram transfer callback wiring, FFmpeg progress parsing, and live progress output from a real generated sample clip.
 
 ## Deliberately not changed
 
